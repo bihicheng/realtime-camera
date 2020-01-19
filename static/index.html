@@ -1,0 +1,101 @@
+<style>
+    #localSessionDescription, #remoteSessionDescription {
+    }
+</style>
+<script src="./jquery.min.js"></script>
+<video id="video1" width="640" height="480" autoplay muted controls></video> <br />
+<div id="remoteVideos"></div>
+<br/>
+NVRID <input type="text" id="nvrId"/>
+<br/>
+摄像头ID <input type="text" id="camId"/>
+<br/>
+<textarea id="localSessionDescription" readonly="true"></textarea>
+<br/>
+<textarea id="remoteSessionDescription"></textarea>
+<br/>
+<button onclick="window.startSession()">开始播放</button>
+<div id="div"></div>
+
+<script>
+    window.p2p = {}
+    /* eslint-env browser */ 
+    window.startSession = ()=>{
+        var camId = document.getElementById("camId").value,
+            nvrId = document.getElementById("nvrId").value;
+        if (nvrId + camId in window.p2p) {
+            console.log('Exists. now close ')
+            // 每次开启都关闭之前的
+            window.p2p[nvrId+camId].close()
+        }
+
+        let pc = new RTCPeerConnection({
+            iceServers: [{
+                urls: 'turn:123.56.13.137:3478',
+                username: 'bi',
+                credential: '123456'
+            }]
+        })
+        let log = msg=>{
+            document.getElementById('div').innerHTML += msg + '<br>'
+        }
+
+        pc.ontrack = function(event) {
+            console.log(event.track.kind)
+            // var el = document.createElement('video')
+                var el = document.getElementById('video1')
+            el.srcObject = event.streams[0]
+            el.autoplay = true
+            el.controls = true
+            document.getElementById('remoteVideos').appendChild(el)
+        }
+
+        pc.oniceconnectionstatechange = e=>log(pc.iceConnectionState)
+        pc.onicecandidate = event=>{
+            if (event.candidate === null) {
+                document.getElementById('localSessionDescription').value = btoa(pc.localDescription.sdp)
+                $.post("/rtcam", {
+                    camId: document.getElementById("camId").value,
+                    nvrId: document.getElementById("nvrId").value,
+                    data: btoa(pc.localDescription.sdp)
+                }, function(data) {
+                    document.getElementById('remoteSessionDescription').value = data
+                    let sd = document.getElementById('remoteSessionDescription').value
+                    if (sd === '') {
+                        return alert('Session Description must not be empty')
+                    }
+
+                    console.log(sd)
+                    try {
+                        pc.setRemoteDescription(new RTCSessionDescription({
+                            type: 'answer',
+                            sdp: atob(sd)
+                        }))
+                        window.p2p[nvrId+camId] = pc
+                    } catch (e) {
+                        alert(e)
+                    }
+
+                });
+            }
+        }
+
+        pc.createOffer({
+            offerToReceiveVideo: true,
+            offerToReceiveAudio: true
+        }).then(d=>pc.setLocalDescription(d)).catch(log)
+
+        let sd = document.getElementById('remoteSessionDescription').value
+        if (sd !== '') {
+            try {
+                pc.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: atob(sd)
+                }))
+            } catch (e) {
+                alert(e)
+            }
+        }
+    }
+</script>
+
